@@ -844,6 +844,18 @@ async function startServer() {
     res.json(filtered);
   });
 
+  // Get a single District-Level Set (Batch)
+  app.get('/api/sets/:id', async (req, res) => {
+    const user = getAuthUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const sets = await dbStore.getSets();
+    const set = sets.find(s => s.id === req.params.id);
+    if (!set) return res.status(404).json({ error: 'Set not found.' });
+
+    res.json(set);
+  });
+
   // Generate Personalized Class Worksheets
   app.post('/api/worksheets/generate', async (req, res) => {
     const user = getAuthUser(req);
