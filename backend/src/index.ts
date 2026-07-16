@@ -10,6 +10,7 @@ import { generateQuestionsForLevel } from './levelGenerator';
 import * as levelsBackendClient from './levelsBackendClient';
 import { randomUUID } from 'crypto';
 import fs from 'fs';
+import { isValidStatusTransition } from './setLifecycle';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -854,6 +855,30 @@ async function startServer() {
     if (!set) return res.status(404).json({ error: 'Set not found.' });
 
     res.json(set);
+  });
+
+  // Update the status of a District-Level Set
+  app.patch('/api/sets/:id/status', async (req, res) => {
+    const user = getAuthUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { status } = req.body;
+    if (!status) {
+      return res.status(400).json({ error: 'Missing required field: status.' });
+    }
+
+    const sets = await dbStore.getSets();
+    const set = sets.find(s => s.id === req.params.id);
+    if (!set) return res.status(404).json({ error: 'Set not found.' });
+
+    if (!isValidStatusTransition(set.status, status)) {
+      return res.status(400).json({ 
+        error: `Invalid status transition from '${set.status}' to '${status}'. Stages must progress strictly one step at a time.` 
+      });
+    }
+
+    const updatedSet = await dbStore.updateSet(set.id, { status });
+    res.json(updatedSet);
   });
 
   // Generate Personalized Class Worksheets
