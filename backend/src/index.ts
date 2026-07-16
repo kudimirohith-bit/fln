@@ -786,6 +786,9 @@ async function startServer() {
   app.post('/api/sets', async (req, res) => {
     const user = getAuthUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    if (![UserRole.DISTRICT_ADMIN, UserRole.BLOCK_ADMIN, UserRole.SUPERADMIN].includes(user.role)) {
+      return res.status(403).json({ error: 'Not authorized to manage Sets.' });
+    }
 
     const { name, assessmentName, schoolId, classGroup, studentIds } = req.body;
     if (!name || !assessmentName || !schoolId || !classGroup || !studentIds) {
@@ -794,6 +797,19 @@ async function startServer() {
 
     if (!Array.isArray(studentIds) || studentIds.length === 0) {
       return res.status(400).json({ error: 'studentIds must be a non-empty array.' });
+    }
+
+    // Verify school and authorization scope
+    const schools = await dbStore.getSchools();
+    const school = schools.find(s => s.id === schoolId);
+    if (!school) {
+      return res.status(400).json({ error: 'School not found.' });
+    }
+    if (user.role === UserRole.DISTRICT_ADMIN && school.districtCode !== user.districtCode) {
+      return res.status(403).json({ error: 'Not authorized to create Sets for schools outside your district.' });
+    }
+    if (user.role === UserRole.BLOCK_ADMIN && school.blockCode !== user.blockCode) {
+      return res.status(403).json({ error: 'Not authorized to create Sets for schools outside your block.' });
     }
 
     const newSet: Set = {
@@ -816,10 +832,29 @@ async function startServer() {
   app.get('/api/sets', async (req, res) => {
     const user = getAuthUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    if (![UserRole.DISTRICT_ADMIN, UserRole.BLOCK_ADMIN, UserRole.SUPERADMIN].includes(user.role)) {
+      return res.status(403).json({ error: 'Not authorized to manage Sets.' });
+    }
 
     const sets = await dbStore.getSets();
+    const schools = await dbStore.getSchools();
+    const schoolMap = new Map(schools.map(s => [s.id, s]));
 
     let filtered = sets;
+
+    // Apply force-scoping
+    if (user.role === UserRole.DISTRICT_ADMIN) {
+      filtered = filtered.filter(s => {
+        const sch = schoolMap.get(s.schoolId);
+        return sch && sch.districtCode === user.districtCode;
+      });
+    } else if (user.role === UserRole.BLOCK_ADMIN) {
+      filtered = filtered.filter(s => {
+        const sch = schoolMap.get(s.schoolId);
+        return sch && sch.blockCode === user.blockCode;
+      });
+    }
+
     const { setId, assessmentName, schoolId, classGroup, status } = req.query;
 
     if (setId) {
@@ -850,10 +885,28 @@ async function startServer() {
   app.get('/api/sets/:id', async (req, res) => {
     const user = getAuthUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    if (![UserRole.DISTRICT_ADMIN, UserRole.BLOCK_ADMIN, UserRole.SUPERADMIN].includes(user.role)) {
+      return res.status(403).json({ error: 'Not authorized to manage Sets.' });
+    }
 
     const sets = await dbStore.getSets();
     const set = sets.find(s => s.id === req.params.id);
     if (!set) return res.status(404).json({ error: 'Set not found.' });
+
+    // Scope check
+    if (user.role !== UserRole.SUPERADMIN) {
+      const schools = await dbStore.getSchools();
+      const school = schools.find(s => s.id === set.schoolId);
+      if (!school) {
+        return res.status(403).json({ error: 'Associated school not found or access denied.' });
+      }
+      if (user.role === UserRole.DISTRICT_ADMIN && school.districtCode !== user.districtCode) {
+        return res.status(403).json({ error: 'Access denied to this Set (outside your district).' });
+      }
+      if (user.role === UserRole.BLOCK_ADMIN && school.blockCode !== user.blockCode) {
+        return res.status(403).json({ error: 'Access denied to this Set (outside your block).' });
+      }
+    }
 
     res.json(set);
   });
@@ -862,6 +915,9 @@ async function startServer() {
   app.patch('/api/sets/:id/status', async (req, res) => {
     const user = getAuthUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    if (![UserRole.DISTRICT_ADMIN, UserRole.BLOCK_ADMIN, UserRole.SUPERADMIN].includes(user.role)) {
+      return res.status(403).json({ error: 'Not authorized to manage Sets.' });
+    }
 
     const { status } = req.body;
     if (!status) {
@@ -871,6 +927,21 @@ async function startServer() {
     const sets = await dbStore.getSets();
     const set = sets.find(s => s.id === req.params.id);
     if (!set) return res.status(404).json({ error: 'Set not found.' });
+
+    // Scope check
+    if (user.role !== UserRole.SUPERADMIN) {
+      const schools = await dbStore.getSchools();
+      const school = schools.find(s => s.id === set.schoolId);
+      if (!school) {
+        return res.status(403).json({ error: 'Associated school not found or access denied.' });
+      }
+      if (user.role === UserRole.DISTRICT_ADMIN && school.districtCode !== user.districtCode) {
+        return res.status(403).json({ error: 'Access denied to this Set (outside your district).' });
+      }
+      if (user.role === UserRole.BLOCK_ADMIN && school.blockCode !== user.blockCode) {
+        return res.status(403).json({ error: 'Access denied to this Set (outside your block).' });
+      }
+    }
 
     if (!isValidStatusTransition(set.status, status)) {
       return res.status(400).json({ 
@@ -901,10 +972,28 @@ async function startServer() {
   app.post('/api/sets/:id/generate', async (req, res) => {
     const user = getAuthUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    if (![UserRole.DISTRICT_ADMIN, UserRole.BLOCK_ADMIN, UserRole.SUPERADMIN].includes(user.role)) {
+      return res.status(403).json({ error: 'Not authorized to manage Sets.' });
+    }
 
     const sets = await dbStore.getSets();
     const set = sets.find(s => s.id === req.params.id);
     if (!set) return res.status(404).json({ error: 'Set not found.' });
+
+    // Scope check
+    if (user.role !== UserRole.SUPERADMIN) {
+      const schools = await dbStore.getSchools();
+      const school = schools.find(s => s.id === set.schoolId);
+      if (!school) {
+        return res.status(403).json({ error: 'Associated school not found or access denied.' });
+      }
+      if (user.role === UserRole.DISTRICT_ADMIN && school.districtCode !== user.districtCode) {
+        return res.status(403).json({ error: 'Access denied to this Set (outside your district).' });
+      }
+      if (user.role === UserRole.BLOCK_ADMIN && school.blockCode !== user.blockCode) {
+        return res.status(403).json({ error: 'Access denied to this Set (outside your block).' });
+      }
+    }
 
     const jobId = 'setjob_' + randomUUID();
     const job: SetGenerationJob = {
@@ -967,6 +1056,28 @@ async function startServer() {
   app.get('/api/sets/:id/generate/:jobId/progress', async (req, res) => {
     const user = getAuthUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    if (![UserRole.DISTRICT_ADMIN, UserRole.BLOCK_ADMIN, UserRole.SUPERADMIN].includes(user.role)) {
+      return res.status(403).json({ error: 'Not authorized to manage Sets.' });
+    }
+
+    const sets = await dbStore.getSets();
+    const set = sets.find(s => s.id === req.params.id);
+    if (!set) return res.status(404).json({ error: 'Set not found.' });
+
+    // Scope check
+    if (user.role !== UserRole.SUPERADMIN) {
+      const schools = await dbStore.getSchools();
+      const school = schools.find(s => s.id === set.schoolId);
+      if (!school) {
+        return res.status(403).json({ error: 'Associated school not found or access denied.' });
+      }
+      if (user.role === UserRole.DISTRICT_ADMIN && school.districtCode !== user.districtCode) {
+        return res.status(403).json({ error: 'Access denied to this Set (outside your district).' });
+      }
+      if (user.role === UserRole.BLOCK_ADMIN && school.blockCode !== user.blockCode) {
+        return res.status(403).json({ error: 'Access denied to this Set (outside your block).' });
+      }
+    }
 
     const job = setGenerationJobs.get(req.params.jobId);
     if (!job || job.setId !== req.params.id) {
@@ -986,10 +1097,28 @@ async function startServer() {
   app.get('/api/sets/:id/download', async (req, res) => {
     const user = getAuthUser(req);
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
+    if (![UserRole.DISTRICT_ADMIN, UserRole.BLOCK_ADMIN, UserRole.SUPERADMIN].includes(user.role)) {
+      return res.status(403).json({ error: 'Not authorized to manage Sets.' });
+    }
 
     const sets = await dbStore.getSets();
     const set = sets.find(s => s.id === req.params.id);
     if (!set) return res.status(404).json({ error: 'Set not found.' });
+
+    // Scope check
+    if (user.role !== UserRole.SUPERADMIN) {
+      const schools = await dbStore.getSchools();
+      const school = schools.find(s => s.id === set.schoolId);
+      if (!school) {
+        return res.status(403).json({ error: 'Associated school not found or access denied.' });
+      }
+      if (user.role === UserRole.DISTRICT_ADMIN && school.districtCode !== user.districtCode) {
+        return res.status(403).json({ error: 'Access denied to this Set (outside your district).' });
+      }
+      if (user.role === UserRole.BLOCK_ADMIN && school.blockCode !== user.blockCode) {
+        return res.status(403).json({ error: 'Access denied to this Set (outside your block).' });
+      }
+    }
 
     // Find the most recent completed job for this Set
     let latestJob = null;
