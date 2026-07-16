@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { dbStore, connectDB, UserRole, User, Student, School, Question, Worksheet, LevelWorksheet, AnswerSubmission, EvaluationReport, Ticket, LogEntry, Announcement, Intervention, BestPractice, Set, SetStatus, generateSetId } from './db';
 import { generateAIDiagnostic, evaluateAIDiagnostic, generateAIPersonalizedWorksheet, evaluateAIWorksheet } from './gemini';
-import { generateDiagnosticPaper } from './paperGenerator';
+import { generateDiagnosticPaper, generateStudentPaper } from './paperGenerator';
 import { generateQuestionsForLevel } from './levelGenerator';
 import * as levelsBackendClient from './levelsBackendClient';
 import { randomUUID } from 'crypto';
@@ -1924,49 +1924,7 @@ async function startServer() {
         return res.status(403).json({ error: 'You are not authorized to generate diagnostic papers for this student.' });
       }
 
-      // Parse class number from classGroup (e.g. "Class 2" -> 2)
-      const classMatch = student.classGroup.match(/\d+/);
-      const classNumber = classMatch ? parseInt(classMatch[0], 10) : 1;
-
-      let questions: Question[];
-      let pdfUrl = '';
-      let useMock = false;
-
-      try {
-        const result = await generateDiagnosticPaper({
-          classNumber,
-          students: [{
-            name: student.name,
-            studentId: student.id,
-            qrData: {
-              age: student.age, classGroup: student.classGroup, section: student.section,
-              schoolId: student.schoolId, currentLevel: student.currentLevel,
-              currentSubLevel: student.currentSubLevel, targetLevel: student.targetLevel,
-              streak: student.streak
-            }
-          }]
-        });
-        questions = result.questions;
-        pdfUrl = `/output/${result.fileName}`;
-      } catch (err: any) {
-        console.error("Puppeteer paper generation failed, using generateQuestionsForLevel mock:", err);
-        useMock = true;
-        // Generate questions across multiple levels using the level generator
-        const startLevel = (classNumber - 1) * 12 + 1;
-        questions = [];
-        for (let lvl = startLevel; lvl < startLevel + 8; lvl++) {
-          const lvlQuestions = generateQuestionsForLevel(Math.min(lvl, 59), 0);
-          lvlQuestions.forEach(q => {
-            questions.push({
-              ...q,
-              question_id: `DIAG_${lvl}_${q.question_id}`,
-              source_level: Math.min(lvl, 59)
-            });
-          });
-        }
-        // Limit to 12 questions for a reasonable diagnostic
-        questions = questions.slice(0, 12);
-      }
+      const { questions, pdfUrl, useMock } = await generateStudentPaper(student.id);
 
       res.json({
         student,
