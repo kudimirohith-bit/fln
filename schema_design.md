@@ -8,7 +8,7 @@ The application utilizes a dual-persistence strategy: it automatically connects 
 
 ## Collections Overview
 
-The database contains **11 primary collections** representing the core modules of the FLN system:
+The database contains **12 primary collections** representing the core modules of the FLN system:
 
 1. `users` — Portal users across administrative hierarchies (Superadmin, Block Admin, Teachers, Volunteers, etc.).
 2. `schools` — Basic education facility metadata (with Strength status & lockdown flags).
@@ -21,6 +21,7 @@ The database contains **11 primary collections** representing the core modules o
 9. `tickets` — Support and curriculum dispute tickets.
 10. `logbook` — Audit and compliance tracking logs.
 11. `announcements` — System-wide broadcast alerts and urgent push notices.
+12. `sets` — District-level administrative batches of students for bulk paper generation, printing, and tracking.
 
 ---
 
@@ -227,5 +228,32 @@ interface Announcement {
   message: string;          // Bulletin prompt
   timestamp: string;        // Release timestamp
   isUrgent: boolean;        // High priority banner flag
+}
+```
+
+### 12. `sets`
+District-Level Set (Batch) — an administrative grouping of students for bulk paper generation, printing, and lifecycle tracking.
+```typescript
+type SetStatus =
+  | 'Created'
+  | 'Question Papers Generated'
+  | 'Printed'
+  | 'Dispatched'
+  | 'Delivered to School'
+  | 'Assessment Conducted'
+  | 'Answer Sheets Returned'
+  | 'Scanning Completed'
+  | 'Evaluation Completed';
+
+interface Set {
+  id: string;               // e.g. "SET-001"
+  name: string;             // Human-readable set label
+  assessmentName: string;   // Name of the linked assessment/exam
+  schoolId: string;         // Target school reference
+  classGroup: string;       // Reuses the same grade/class values as the `classes` collection (e.g., "Class 2", "Class 3", "Class 4")
+  studentIds: string[];     // Ordered list of student IDs — printing order must match this order
+  status: SetStatus;        // Current forward-only lifecycle stage
+  createdAt: string;        // ISO timestamp
+  createdByEmail: string;   // Email of the district admin who created the set
 }
 ```
