@@ -2,6 +2,26 @@ import React, { useState, useEffect } from 'react';
 import { Table, Column } from './Table';
 import { Layers } from 'lucide-react';
 
+const SET_STATUS_ORDER = [
+  'Created',
+  'Question Papers Generated',
+  'Printed',
+  'Dispatched',
+  'Delivered to School',
+  'Assessment Conducted',
+  'Answer Sheets Returned',
+  'Scanning Completed',
+  'Evaluation Completed',
+];
+
+const getNextStatus = (currentStatus: string): string | null => {
+  const currentIndex = SET_STATUS_ORDER.indexOf(currentStatus);
+  if (currentIndex === -1 || currentIndex === SET_STATUS_ORDER.length - 1) {
+    return null;
+  }
+  return SET_STATUS_ORDER[currentIndex + 1];
+};
+
 export const SetsPanel: React.FC<{ token: string }> = ({ token }) => {
   const [sets, setSets] = useState<any[]>([]);
   const [filters, setFilters] = useState({
@@ -49,22 +69,20 @@ export const SetsPanel: React.FC<{ token: string }> = ({ token }) => {
   };
 
   useEffect(() => {
-    fetchSets();
+    fetch('/api/schools', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => { if (Array.isArray(d)) setSchools(d); })
+      .catch(console.error);
+      
+    fetch('/api/students', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => { if (Array.isArray(d)) setStudents(d); })
+      .catch(console.error);
   }, [token]);
 
   useEffect(() => {
-    if (isCreateModalOpen && schools.length === 0) {
-      fetch('/api/schools', { headers: { 'Authorization': `Bearer ${token}` } })
-        .then(r => r.json())
-        .then(d => { if (Array.isArray(d)) setSchools(d); })
-        .catch(console.error);
-        
-      fetch('/api/students', { headers: { 'Authorization': `Bearer ${token}` } })
-        .then(r => r.json())
-        .then(d => { if (Array.isArray(d)) setStudents(d); })
-        .catch(console.error);
-    }
-  }, [isCreateModalOpen, token, schools.length]);
+    fetchSets();
+  }, [token, filters.setId, filters.assessmentName, filters.schoolId, filters.classGroup, filters.status]);
 
   const runningJobKeys = Object.entries(activeJobs)
     .filter(([_, j]) => (j as any).status === 'running')
@@ -117,6 +135,37 @@ export const SetsPanel: React.FC<{ token: string }> = ({ token }) => {
 
   const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFilters(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  const handleUpdateStatus = async (setId: string, nextStatus: string) => {
+    try {
+      const res = await fetch(`/api/sets/${setId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ status: nextStatus })
+      });
+      if (res.ok) {
+        fetchSets();
+      } else {
+        const errData = await res.json();
+        alert(errData.error || 'Failed to update status');
+      }
+    } catch (err) {
+      console.error('Failed to update status', err);
+    }
+  };
+
+  const handleResetFilters = () => {
+    setFilters({
+      setId: '',
+      assessmentName: '',
+      schoolId: '',
+      classGroup: '',
+      status: ''
+    });
   };
 
   const availableStudents = students.filter(
@@ -173,19 +222,23 @@ export const SetsPanel: React.FC<{ token: string }> = ({ token }) => {
     }
   };
 
+  const schoolMap = new Map<string, any>(schools.map(s => [s.id, s]));
+
   const columns: Column<any>[] = [
     { header: 'Set ID', accessor: 'id', className: 'font-mono text-xs text-slate-500' },
     { header: 'Name', accessor: 'name', className: 'font-semibold text-slate-800 dark:text-slate-100' },
     { header: 'Assessment', accessor: 'assessmentName', className: 'text-sm' },
-    { header: 'School', accessor: 'schoolId', className: 'text-sm text-slate-500' },
+    { header: 'School', accessor: (row) => schoolMap.get(row.schoolId)?.name || row.schoolId, className: 'text-sm text-slate-500' },
     { header: 'Grade', accessor: 'classGroup', className: 'text-sm' },
     { header: 'Students', accessor: (row) => row.studentIds?.length || 0, className: 'text-sm font-mono' },
-    { header: 'Status', accessor: 'status', className: 'text-sm' },
+    { header: 'Status', accessor: 'status', className: 'text-sm font-semibold' },
     { header: 'Created', accessor: (row) => new Date(row.createdAt).toLocaleDateString(), className: 'text-sm text-slate-500' },
     {
       header: 'Actions',
       accessor: (row) => {
         const job = activeJobs[row.id];
+        const nextStatus = getNextStatus(row.status);
+
         if (job) {
           if (job.status === 'running') {
             const pct = Math.round((job.completed / Math.max(1, job.total)) * 100);
@@ -206,12 +259,20 @@ export const SetsPanel: React.FC<{ token: string }> = ({ token }) => {
               <div className="flex flex-col gap-1 items-start w-32">
                 <a 
                   href={`/api/sets/${row.id}/download`} 
-                  className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1 text-center w-full block hover:bg-emerald-100 transition-colors"
+                  className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1 text-center w-full block hover:bg-emerald-100 transition-colors font-mono"
                 >
                   Download Package
                 </a>
                 {job.failures && job.failures.length > 0 && (
                   <span className="text-[9px] text-red-500 font-bold block">{job.failures.length} failed</span>
+                )}
+                {row.status === 'Created' && (
+                  <button
+                    onClick={() => handleUpdateStatus(row.id, 'Question Papers Generated')}
+                    className="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded px-2 py-1 hover:bg-blue-100 transition-colors w-full cursor-pointer"
+                  >
+                    Mark: Generated
+                  </button>
                 )}
               </div>
             );
@@ -225,12 +286,24 @@ export const SetsPanel: React.FC<{ token: string }> = ({ token }) => {
           return (
             <button 
               onClick={() => handleGenerate(row.id)}
-              className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-2 py-1 hover:bg-indigo-100 transition-colors"
+              className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-2 py-1 hover:bg-indigo-100 transition-colors cursor-pointer"
             >
               Generate Papers
             </button>
           );
         }
+
+        if (nextStatus) {
+          return (
+            <button
+              onClick={() => handleUpdateStatus(row.id, nextStatus)}
+              className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1 hover:bg-emerald-100 transition-colors cursor-pointer"
+            >
+              Mark: {nextStatus}
+            </button>
+          );
+        }
+
         return null;
       },
       className: ''
@@ -271,22 +344,29 @@ export const SetsPanel: React.FC<{ token: string }> = ({ token }) => {
           onChange={handleFilterChange}
           className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-indigo-500"
         />
-        <input 
-          type="text" 
+        <select 
           name="schoolId"
-          placeholder="Filter by School ID..." 
           value={filters.schoolId}
           onChange={handleFilterChange}
           className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-indigo-500"
-        />
-        <input 
-          type="text" 
+        >
+          <option value="">All Schools</option>
+          {schools.map(s => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </select>
+        <select 
           name="classGroup"
-          placeholder="Filter by Grade..." 
           value={filters.classGroup}
           onChange={handleFilterChange}
           className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-indigo-500"
-        />
+        >
+          <option value="">All Grades</option>
+          <option value="Class 1">Class 1</option>
+          <option value="Class 2">Class 2</option>
+          <option value="Class 3">Class 3</option>
+          <option value="Class 4">Class 4</option>
+        </select>
         <div className="flex gap-2">
           <select 
             name="status"
@@ -306,10 +386,10 @@ export const SetsPanel: React.FC<{ token: string }> = ({ token }) => {
             <option value="Evaluation Completed">Evaluation Completed</option>
           </select>
           <button 
-            onClick={fetchSets}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 transition-colors"
+            onClick={handleResetFilters}
+            className="px-4 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-sm font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
           >
-            Apply
+            Reset
           </button>
         </div>
       </div>
