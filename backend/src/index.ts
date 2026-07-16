@@ -881,6 +881,94 @@ async function startServer() {
     res.json(updatedSet);
   });
 
+  interface SetGenerationJob {
+    jobId: string;
+    setId: string;
+    total: number;
+    completed: number;
+    status: 'running' | 'completed' | 'failed';
+    pdfPaths: string[];
+    failures: Array<{ studentId: string; error: string }>;
+    startedAt: string;
+    completedAt: string;
+  }
+
+  const setGenerationJobs = new Map<string, SetGenerationJob>();
+
+  // Start a Set generation job asynchronously
+  app.post('/api/sets/:id/generate', async (req, res) => {
+    const user = getAuthUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const sets = await dbStore.getSets();
+    const set = sets.find(s => s.id === req.params.id);
+    if (!set) return res.status(404).json({ error: 'Set not found.' });
+
+    const jobId = 'setjob_' + randomUUID();
+    const job: SetGenerationJob = {
+      jobId,
+      setId: set.id,
+      total: set.studentIds.length,
+      completed: 0,
+      status: 'running',
+      pdfPaths: [],
+      failures: [],
+      startedAt: new Date().toISOString(),
+      completedAt: ''
+    };
+    setGenerationJobs.set(jobId, job);
+
+    res.status(202).json({
+      jobId,
+      setId: set.id,
+      totalStudents: job.total,
+      status: 'running',
+      progressUrl: `/api/sets/${set.id}/generate/${jobId}/progress`
+    });
+
+    // Background processing loop
+    (async () => {
+      try {
+        for (const studentId of set.studentIds) {
+          try {
+            const result = await generateStudentPaper(studentId);
+            job.pdfPaths.push(result.pdfUrl);
+          } catch (err: any) {
+            console.error(`Failed to generate paper for student ${studentId}:`, err);
+            job.failures.push({ studentId, error: err?.message || 'Unknown error' });
+          } finally {
+            job.completed += 1;
+          }
+        }
+        job.status = 'completed';
+      } catch (err: any) {
+        console.error(`Fatal error in set generation job ${jobId}:`, err);
+        job.status = 'failed';
+      } finally {
+        job.completedAt = new Date().toISOString();
+      }
+    })();
+  });
+
+  // Get Set generation job progress
+  app.get('/api/sets/:id/generate/:jobId/progress', async (req, res) => {
+    const user = getAuthUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const job = setGenerationJobs.get(req.params.jobId);
+    if (!job || job.setId !== req.params.id) {
+      return res.status(404).json({ error: 'Job not found.' });
+    }
+
+    res.json({
+      jobId: job.jobId,
+      status: job.status,
+      completed: job.completed,
+      total: job.total,
+      failures: job.failures
+    });
+  });
+
   // Generate Personalized Class Worksheets
   app.post('/api/worksheets/generate', async (req, res) => {
     const user = getAuthUser(req);
