@@ -978,6 +978,39 @@ async function startServer() {
     });
   });
 
+  // Download the generated PDF package for a Set
+  app.get('/api/sets/:id/download', async (req, res) => {
+    const user = getAuthUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const sets = await dbStore.getSets();
+    const set = sets.find(s => s.id === req.params.id);
+    if (!set) return res.status(404).json({ error: 'Set not found.' });
+
+    // Find the most recent completed job for this Set
+    let latestJob = null;
+    for (const job of setGenerationJobs.values()) {
+      if (job.setId === set.id && job.status === 'completed' && job.packagePath) {
+        if (!latestJob || new Date(job.completedAt).getTime() > new Date(latestJob.completedAt).getTime()) {
+          latestJob = job;
+        }
+      }
+    }
+
+    if (!latestJob || !latestJob.packagePath) {
+      return res.status(404).json({ error: 'No generated package for this Set yet.' });
+    }
+
+    const filename = latestJob.packagePath.split('/').pop() || `${set.id}-package.pdf`;
+    const absolutePath = path.join(ROOT_DIR, 'output', filename);
+
+    if (!fs.existsSync(absolutePath)) {
+      return res.status(404).json({ error: 'PDF file not found on disk.' });
+    }
+
+    res.download(absolutePath, `${set.id}-package.pdf`);
+  });
+
   // Generate Personalized Class Worksheets
   app.post('/api/worksheets/generate', async (req, res) => {
     const user = getAuthUser(req);
