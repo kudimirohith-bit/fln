@@ -67,18 +67,18 @@ export const SetsPanel: React.FC<{ token: string }> = ({ token }) => {
   }, [isCreateModalOpen, token, schools.length]);
 
   const runningJobKeys = Object.entries(activeJobs)
-    .filter(([_, j]) => j.status === 'running')
-    .map(([id, j]) => `${id}:${j.jobId}`)
+    .filter(([_, j]) => (j as any).status === 'running')
+    .map(([id, j]) => `${id}:${(j as any).jobId}`)
     .join(',');
 
   useEffect(() => {
-    const runningEntries = Object.entries(activeJobs).filter(([_, j]) => j.status === 'running');
+    const runningEntries = Object.entries(activeJobs).filter(([_, j]) => (j as any).status === 'running');
     if (runningEntries.length === 0) return;
 
     const interval = setInterval(async () => {
       for (const [setId, job] of runningEntries) {
         try {
-          const res = await fetch(`/api/sets/${setId}/generate/${job.jobId}/progress`, {
+          const res = await fetch(`/api/sets/${setId}/generate/${(job as any).jobId}/progress`, {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           if (res.ok) {

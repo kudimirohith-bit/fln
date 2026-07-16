@@ -224,8 +224,10 @@ export async function generateLevelWorksheet({
     await page.goto(`file://${htmlPath}`, { waitUntil: 'networkidle0' as any, timeout: 30000 });
 
     const data = await page.evaluate(({ levelId, subIdx, studentId, studentName }) => {
-      const nameInput = document.getElementById('studentName') as HTMLInputElement | null;
-      const idInput = document.getElementById('studentId') as HTMLInputElement | null;
+      // @ts-ignore
+      const nameInput = document.getElementById('studentName') as any;
+      // @ts-ignore
+      const idInput = document.getElementById('studentId') as any;
       if (nameInput) nameInput.value = studentName;
       if (idInput) idInput.value = studentId;
       // @ts-ignore
