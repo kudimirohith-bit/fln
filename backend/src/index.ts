@@ -934,7 +934,11 @@ async function startServer() {
         for (const studentId of set.studentIds) {
           try {
             const result = await generateStudentPaper(studentId);
-            job.pdfPaths.push(result.pdfUrl);
+            if (result.useMock) {
+              job.failures.push({ studentId, error: 'Puppeteer unavailable — mock fallback produced no PDF.' });
+            } else {
+              job.pdfPaths.push(result.pdfUrl);
+            }
           } catch (err: any) {
             console.error(`Failed to generate paper for student ${studentId}:`, err);
             job.failures.push({ studentId, error: err?.message || 'Unknown error' });
