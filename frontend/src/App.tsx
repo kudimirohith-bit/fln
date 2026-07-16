@@ -21,6 +21,7 @@ import { LogbookView } from './components/LogbookView';
 import { TicketSubmission } from './components/TicketSubmission';
 import { AssessmentCalendar } from './components/AssessmentCalendar';
 import { PanelViews } from './components/PanelViews';
+import { SetsPanel } from './components/SetsPanel';
 import { Bell, Settings, ShieldCheck } from 'lucide-react';
 
 export default function App() {
@@ -147,6 +148,7 @@ export default function App() {
                 )}
 
                 {activePanel === 'workspace' && renderRoleWorkspace()}
+                {activePanel === 'sets' && <SetsPanel token={token} />}
 
                 {activePanel === 'notifications' && (
                   <div className="space-y-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
