@@ -11,6 +11,7 @@ import * as levelsBackendClient from './levelsBackendClient';
 import { randomUUID } from 'crypto';
 import fs from 'fs';
 import { isValidStatusTransition } from './setLifecycle';
+import { buildSetPackage } from './pdfMerge';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -888,6 +889,7 @@ async function startServer() {
     completed: number;
     status: 'running' | 'completed' | 'failed';
     pdfPaths: string[];
+    packagePath?: string;
     failures: Array<{ studentId: string; error: string }>;
     startedAt: string;
     completedAt: string;
@@ -941,6 +943,13 @@ async function startServer() {
           }
         }
         job.status = 'completed';
+        try {
+          job.packagePath = await buildSetPackage(set, job.pdfPaths);
+        } catch (err: any) {
+          console.error(`Failed to build set package for job ${jobId}:`, err);
+          job.status = 'failed';
+          job.failures.push({ studentId: 'PACKAGE_BUILD', error: err?.message || 'Package build error' });
+        }
       } catch (err: any) {
         console.error(`Fatal error in set generation job ${jobId}:`, err);
         job.status = 'failed';
